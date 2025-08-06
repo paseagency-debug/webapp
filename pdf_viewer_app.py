@@ -1,12 +1,13 @@
 import streamlit as st
 import fitz  # PyMuPDF
-import io
 from PIL import Image
+import io
+import zipfile
 
 # -------------------------------
 # PAGE CONFIGURATION
 # -------------------------------
-st.set_page_config(page_title="📄 PDF Preview & Converter", layout="wide")
+st.set_page_config(page_title="📄 PDF Preview & JPG Converter", layout="wide")
 
 # -------------------------------
 # SIDEBAR
@@ -16,6 +17,7 @@ with st.sidebar:
     st.markdown("Upload a PDF to:")
     st.markdown("- Preview pages 📖")
     st.markdown("- Convert pages to JPG 🖼️")
+    st.markdown("- Download all JPGs as ZIP 📦")
     st.markdown("---")
     st.markdown("Made with ❤️ using Streamlit + PyMuPDF")
 
@@ -30,9 +32,9 @@ if uploaded_file:
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     total_pages = len(doc)
 
-    # --- PREVIEW SETTINGS ---
-    st.success(f"✅ PDF loaded successfully! Total pages: {total_pages}")
-    view_mode = st.radio("Choose mode:", ["📖 Preview Page", "🖼️ Convert to JPG"], horizontal=True)
+    # --- VIEW MODE OPTIONS ---
+    st.success(f"✅ PDF loaded! Total pages: {total_pages}")
+    view_mode = st.radio("Choose mode:", ["📖 Preview Page", "🖼️ Convert to JPG & Download"], horizontal=True)
 
     if view_mode == "📖 Preview Page":
         selected_page = st.slider("Select a page to preview", 1, total_pages, 1)
@@ -45,18 +47,36 @@ if uploaded_file:
 
         st.image(img_bytes, caption=f"Page {selected_page}", use_column_width=True)
 
-    elif view_mode == "🖼️ Convert to JPG":
-        st.info("Converting all PDF pages to JPG...")
+    elif view_mode == "🖼️ Convert to JPG & Download":
+        st.info("⏳ Converting all PDF pages to JPG...")
 
-        for i in range(total_pages):
-            page = doc[i]
-            mat = fitz.Matrix(2, 2)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        # Create ZIP in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
+            for i in range(total_pages):
+                page = doc[i]
+                mat = fitz.Matrix(2, 2)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
-            st.image(img, caption=f"🖼️ Page {i + 1}", use_column_width=True)
+                # Save each image to BytesIO and write to ZIP
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format="JPEG")
+                zip_file.writestr(f"page_{i+1}.jpg", img_byte_arr.getvalue())
+
+                # Optional preview in UI
+                st.image(img, caption=f"🖼️ Page {i + 1}", use_column_width=True)
 
         st.success("✅ Conversion complete!")
 
+        # Download button
+        zip_buffer.seek(0)
+        st.download_button(
+            label="📦 Download All JPGs as ZIP",
+            data=zip_buffer,
+            file_name="converted_images.zip",
+            mime="application/zip"
+        )
+
 else:
-    st.info("📤 Upload a PDF file from the sidebar to begin.")
+    st.info("📤 Upload a PDF file to begin.")
